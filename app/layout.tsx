@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import "./globals.css";
+import { ThemeProvider } from "./ThemeProvider";
+import { ThemeToggle } from "./ThemeToggle";
 
 export const metadata: Metadata = {
   title: "NextJS Test Case Generator",
@@ -11,9 +14,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, fontFamily: "system-ui, sans-serif", backgroundColor: "#000", color: "#fff", minHeight: "100vh" }}>
-        {children}
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);else if(window.matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.setAttribute("data-theme","light");})();`,
+          }}
+        />
+      </head>
+      <body>
+        <ThemeProvider>
+          <ThemeToggle />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

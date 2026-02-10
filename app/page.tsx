@@ -49,10 +49,10 @@ export default function Home() {
 
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ marginBottom: 8, fontSize: 24, fontWeight: 600 }}>
+      <h1 style={{ marginBottom: 8, fontSize: 24, fontWeight: 600, color: "var(--text)" }}>
         NextJS Test Case Generator
       </h1>
-      <p style={{ color: "#888", marginBottom: 24, fontSize: 14 }}>
+      <p style={{ color: "var(--text-muted)", marginBottom: 24, fontSize: 14 }}>
         Paste code or a plain English requirement. We&apos;ll generate Jest + React Testing Library tests via Gemini.
       </p>
 
@@ -68,12 +68,12 @@ export default function Home() {
             padding: 12,
             fontSize: 14,
             fontFamily: "ui-monospace, monospace",
-            border: "1px solid #333",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             resize: "vertical",
             boxSizing: "border-box",
-            backgroundColor: "#111",
-            color: "#fff",
+            backgroundColor: "var(--bg-elevated)",
+            color: "var(--text)",
           }}
         />
         <button
@@ -84,7 +84,7 @@ export default function Home() {
             padding: "10px 20px",
             fontSize: 14,
             fontWeight: 600,
-            backgroundColor: loading ? "#444" : "#0070f3",
+            backgroundColor: loading ? "var(--accent-disabled)" : "var(--accent)",
             color: "#fff",
             border: "none",
             borderRadius: 8,
@@ -100,10 +100,10 @@ export default function Home() {
           style={{
             marginTop: 24,
             padding: 12,
-            backgroundColor: "rgba(255, 80, 80, 0.15)",
-            border: "1px solid #f44",
+            backgroundColor: "var(--error-bg)",
+            border: "1px solid var(--error-border)",
             borderRadius: 8,
-            color: "#f88",
+            color: "var(--error-text)",
             fontSize: 14,
           }}
         >
@@ -113,15 +113,15 @@ export default function Home() {
 
       {implementation && (
         <section style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
             Implementation
           </h2>
           <pre
             style={{
               margin: 0,
               padding: 16,
-              backgroundColor: "#1e1e1e",
-              color: "#d4d4d4",
+              backgroundColor: "var(--code-bg)",
+              color: "var(--code-text)",
               borderRadius: 8,
               overflow: "auto",
               fontSize: 13,
@@ -137,15 +137,15 @@ export default function Home() {
 
       {tests && (
         <section style={{ marginTop: implementation ? 24 : 24 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
             Generated Test Cases
           </h2>
           <pre
             style={{
               margin: 0,
               padding: 16,
-              backgroundColor: "#1e1e1e",
-              color: "#d4d4d4",
+              backgroundColor: "var(--code-bg)",
+              color: "var(--code-text)",
               borderRadius: 8,
               overflow: "auto",
               fontSize: 13,
