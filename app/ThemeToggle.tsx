@@ -13,10 +13,6 @@ export function ThemeToggle() {
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       title={isDark ? "Light mode" : "Dark mode"}
       style={{
-        position: "fixed",
-        top: 16,
-        right: 16,
-        zIndex: 50,
         display: "flex",
         alignItems: "center",
         gap: 8,

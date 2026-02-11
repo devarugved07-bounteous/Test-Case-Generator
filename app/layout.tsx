@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "./ThemeProvider";
-import { ThemeToggle } from "./ThemeToggle";
+import { SnowAndControls } from "./SnowAndControls";
 
 export const metadata: Metadata = {
   title: "NextJS Test Case Generator",
@@ -24,8 +24,7 @@ export default function RootLayout({
       </head>
       <body>
         <ThemeProvider>
-          <ThemeToggle />
-          {children}
+          <SnowAndControls>{children}</SnowAndControls>
         </ThemeProvider>
       </body>
     </html>
