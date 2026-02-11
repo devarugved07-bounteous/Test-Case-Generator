@@ -6,6 +6,7 @@ Generate Jest + React Testing Library test cases from code or plain English requ
 
 - **Code or requirement input** — Paste JS/TS/React code or describe a requirement in plain English.
 - **Gemini-powered** — Uses Google’s Gemini API to generate tests (and implementation when you provide a requirement).
+- **Loading steps** — While generating, the UI shows progress steps: “Analyzing input…”, “Calling Gemini…”, “Formatting results…” for a more responsive feel.
 - **Dark / light mode** — Toggle in the top-right; preference is saved in `localStorage`.
 
 ## Package installation
@@ -48,7 +49,7 @@ app/
   api/generate-tests/route.ts   # POST API: detects code vs requirement, calls Gemini
   globals.css                   # Theme CSS variables (light/dark)
   layout.tsx                    # Root layout, theme script, ThemeProvider
-  page.tsx                      # Main UI: textarea, submit, results
+  page.tsx                      # Main UI: textarea, submit, loading steps, results
   ThemeProvider.tsx             # Theme context + localStorage
   ThemeToggle.tsx               # Dark/light mode switch (top-right)
 lib/
@@ -58,6 +59,6 @@ lib/
 ## Usage
 
 1. Paste **code** (Next.js/JS/TS/React) or a **requirement** (e.g. “generate test cases for a function that adds two numbers”) in the textarea.
-2. Click **Generate Test Cases**.
+2. Click **Generate Test Cases** — you’ll see loading steps (Analyzing input…, Calling Gemini…, Formatting results…) while the request runs.
 3. View the generated test file (and implementation when you used a requirement) in the output section.
 4. Use the **theme toggle** (top-right) to switch between dark and light mode; your choice is remembered on reload.

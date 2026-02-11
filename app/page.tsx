@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+const LOADING_STEPS = ["Analyzing input…", "Calling Gemini…", "Formatting results…"];
+const STEP_INTERVAL_MS = 2000;
 
 type Result = {
   success: true;
@@ -12,9 +15,19 @@ type Result = {
 export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [tests, setTests] = useState<string | null>(null);
   const [implementation, setImplementation] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingStep(0);
+    const id = setInterval(() => {
+      setLoadingStep((s) => Math.min(s + 1, LOADING_STEPS.length - 1));
+    }, STEP_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [loading]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,6 +107,42 @@ export default function Home() {
           {loading ? "Generating…" : "Generate Test Cases"}
         </button>
       </form>
+
+      {loading && (
+        <div
+          style={{
+            marginTop: 24,
+            padding: 16,
+            backgroundColor: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+          }}
+        >
+          <p style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+            Generating test cases
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20, listStyle: "none" }}>
+            {LOADING_STEPS.map((label, i) => (
+              <li
+                key={label}
+                style={{
+                  position: "relative",
+                  marginBottom: i < LOADING_STEPS.length - 1 ? 8 : 0,
+                  paddingLeft: 8,
+                  fontSize: 14,
+                  color: i < loadingStep ? "var(--text-muted)" : i === loadingStep ? "var(--text)" : "var(--text-muted)",
+                  opacity: i <= loadingStep ? 1 : 0.6,
+                }}
+              >
+                <span style={{ position: "absolute", left: -20 }}>
+                  {i < loadingStep ? "✓" : i === loadingStep ? "⋯" : "○"}
+                </span>
+                {label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {error && (
         <div
