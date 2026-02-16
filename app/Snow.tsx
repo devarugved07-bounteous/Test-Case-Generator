@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-const FLAKE_COUNT = 250;
+const FLAKE_COUNT = 500;
 const FADE_DURATION_MS = 1400;
 
 /**
@@ -15,7 +15,7 @@ export function Snow({ active }: { active: boolean }) {
       Array.from({ length: FLAKE_COUNT }, (_, i) => ({
         id: i,
         left: Math.random() * 100,
-        size: 2 + Math.random() * 0.3,
+        size: 1 + Math.random() * 0.25,
         duration: 8 + Math.random() * 8,
         delay: Math.random() * -20,
         opacity: 0.4 + Math.random() * 0.6,
