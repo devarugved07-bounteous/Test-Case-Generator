@@ -4,8 +4,8 @@ import { ThemeProvider } from "./ThemeProvider";
 import { SnowAndControls } from "./SnowAndControls";
 
 export const metadata: Metadata = {
-  title: "NextJS Test Case Generator",
-  description: "Generate Jest + React Testing Library test cases from code or requirements using Gemini.",
+  title: "UI Component Test Generator",
+  description: "Generate Jest + React Testing Library tests for UI components by scanning a GitHub repository.",
 };
 
 export default function RootLayout({
