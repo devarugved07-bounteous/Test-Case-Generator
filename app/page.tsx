@@ -34,7 +34,21 @@ export default function Home() {
   const [providerUsed, setProviderUsed] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [downloadFeedback, setDownloadFeedback] = useState(false);
+  const [generatedTests, setGeneratedTests] = useState<Record<string, string>>({});
+  const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
+  const [downloadZipFeedback, setDownloadZipFeedback] = useState(false);
+  const [generatingAll, setGeneratingAll] = useState(false);
   const FEEDBACK_RESET_MS = 2000;
+
+  function togglePathSelection(path: string) {
+    setSelectedPaths((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]
+    );
+  }
+
+  function isPathSelected(path: string) {
+    return selectedPaths.includes(path);
+  }
 
   useEffect(() => {
     if (!scanning) return;
@@ -71,12 +85,14 @@ export default function Home() {
     setTree([]);
     setList([]);
     setSelectedPath(null);
+    setSelectedPaths([]);
     setSourceContent(null);
     setTests(null);
     setGenError(null);
     setProviderUsed(null);
     setCopyFeedback(false);
     setDownloadFeedback(false);
+    setGeneratedTests({});
     if (!repoUrl.trim()) {
       setScanError("Please enter a GitHub repository URL.");
       return;
@@ -172,12 +188,126 @@ export default function Home() {
         return;
       }
       const result = data as GenerateResult;
-      setTests(result.tests ?? null);
+      const testContent = result.tests ?? "";
+      setTests(testContent);
       setProviderUsed(result.metadata?.provider ?? null);
+      if (testContent) {
+        setGeneratedTests((prev) => ({ ...prev, [selectedPath]: testContent }));
+      }
     } catch {
       setGenError("Network or server error. Try again.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleGenerateSelected() {
+    if (!repo || selectedPaths.length === 0) return;
+    setGenError(null);
+    setGenerating(true);
+    const paths = [...selectedPaths];
+    let lastTests: string | null = null;
+    let lastPath: string | null = null;
+    try {
+      for (const path of paths) {
+        const params = new URLSearchParams({
+          owner: repo.owner,
+          repo: repo.repo,
+          branch: repo.branch,
+          path,
+        });
+        const fileRes = await fetch(`/api/repo/file?${params}`);
+        const fileData = await fileRes.json();
+        const content = fileRes.ok ? fileData.content : "";
+        if (!content?.trim()) continue;
+        const res = await fetch("/api/generate-tests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: content, mode: "component" }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.tests) {
+          setGeneratedTests((prev) => ({ ...prev, [path]: data.tests }));
+          lastTests = data.tests;
+          lastPath = path;
+        }
+      }
+      if (paths.length === 1 && lastPath && lastTests) {
+        setSelectedPath(lastPath);
+        setTests(lastTests);
+      }
+    } catch {
+      setGenError("Some tests failed to generate. Try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleGenerateAll() {
+    if (!repo || list.length === 0) return;
+    setGenError(null);
+    setGeneratingAll(true);
+    try {
+      for (const item of list) {
+        const params = new URLSearchParams({
+          owner: repo.owner,
+          repo: repo.repo,
+          branch: repo.branch,
+          path: item.path,
+        });
+        const fileRes = await fetch(`/api/repo/file?${params}`);
+        const fileData = await fileRes.json();
+        const content = fileRes.ok ? fileData.content : "";
+        if (!content?.trim()) continue;
+        const res = await fetch("/api/generate-tests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: content, mode: "component" }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.tests) {
+          setGeneratedTests((prev) => ({ ...prev, [item.path]: data.tests }));
+        }
+      }
+    } catch {
+      setGenError("Some tests failed to generate. Try again.");
+    } finally {
+      setGeneratingAll(false);
+    }
+  }
+
+  async function handleDownloadTests() {
+    const entries = Object.entries(generatedTests);
+    if (entries.length === 0) {
+      setGenError("No tests to download. Generate tests first.");
+      return;
+    }
+    setDownloadZipFeedback(true);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/export-tests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          files: entries.map(([path, tests]) => ({ path, tests })),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const msg = (data as { error?: string }).error ?? "Download failed.";
+        setGenError(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "generated-tests.zip";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setTimeout(() => setDownloadZipFeedback(false), FEEDBACK_RESET_MS);
+    } catch {
+      setGenError("Failed to download ZIP. Try again.");
+      setDownloadZipFeedback(false);
     }
   }
 
@@ -206,12 +336,17 @@ export default function Home() {
     return entries.map((entry) => {
       if (entry.type === "file") {
         const isSelected = selectedPath === entry.path;
+        const isChecked = isPathSelected(entry.path);
+        const hasGenerated = entry.path in generatedTests;
         return (
           <div
             key={entry.path}
             role="button"
             tabIndex={0}
-            onClick={() => setSelectedPath(entry.path)}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('input[type="checkbox"]')) return;
+              setSelectedPath(entry.path);
+            }}
             onKeyDown={(e) => e.key === "Enter" && setSelectedPath(entry.path)}
             style={{
               padding: "6px 12px",
@@ -221,8 +356,24 @@ export default function Home() {
               backgroundColor: isSelected ? "var(--accent)" : "transparent",
               color: isSelected ? "#fff" : "var(--text)",
               fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
             }}
           >
+            <input
+              type="checkbox"
+              checked={isChecked}
+              onChange={(e) => {
+                e.stopPropagation();
+                togglePathSelection(entry.path);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Select ${entry.name}`}
+            />
+            {hasGenerated && (
+              <span style={{ fontSize: 12, opacity: 0.9 }} title="Test generated">✓</span>
+            )}
             {entry.name} <span style={{ opacity: 0.8, fontSize: 12 }}>{entry.path}</span>
           </div>
         );
@@ -406,12 +557,17 @@ export default function Home() {
             {search.trim() ? (
               filteredList.map((item) => {
                 const isSelected = selectedPath === item.path;
+                const isChecked = isPathSelected(item.path);
+                const hasGenerated = item.path in generatedTests;
                 return (
                   <div
                     key={item.path}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setSelectedPath(item.path)}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('input[type="checkbox"]')) return;
+                      setSelectedPath(item.path);
+                    }}
                     onKeyDown={(e) => e.key === "Enter" && setSelectedPath(item.path)}
                     style={{
                       padding: "8px 12px",
@@ -420,8 +576,24 @@ export default function Home() {
                       backgroundColor: isSelected ? "var(--accent)" : "transparent",
                       color: isSelected ? "#fff" : "var(--text)",
                       fontSize: 13,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
                     }}
                   >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        togglePathSelection(item.path);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${item.name}`}
+                    />
+                    {hasGenerated && (
+                      <span style={{ fontSize: 12, opacity: 0.9 }} title="Test generated">✓</span>
+                    )}
                     <strong>{item.name}</strong> <span style={{ opacity: 0.9 }}>{item.path}</span>
                   </div>
                 );
@@ -470,25 +642,84 @@ export default function Home() {
                   )}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <button
                   type="button"
                   onClick={handleGenerate}
-                  disabled={generating || sourceLoading}
+                  disabled={generating || generatingAll || sourceLoading}
                   style={{
                     padding: "10px 20px",
                     fontSize: 14,
                     fontWeight: 600,
-                    backgroundColor: generating ? "var(--accent-disabled)" : "var(--accent)",
+                    backgroundColor: (generating || generatingAll) ? "var(--accent-disabled)" : "var(--accent)",
                     color: "#fff",
                     border: "none",
                     borderRadius: 8,
-                    cursor: generating ? "not-allowed" : "pointer",
+                    cursor: (generating || generatingAll) ? "not-allowed" : "pointer",
                   }}
                 >
                   {generating ? "Generating…" : "Generate tests"}
                 </button>
+                {selectedPaths.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleGenerateSelected}
+                    disabled={generating || generatingAll}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      backgroundColor: (generating || generatingAll) ? "var(--accent-disabled)" : "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 8,
+                      cursor: (generating || generatingAll) ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {generating ? "Generating…" : `Generate for ${selectedPaths.length} selected`}
+                  </button>
+                )}
               </div>
+            </div>
+          )}
+          {list.length > 0 && (
+            <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={handleGenerateAll}
+                disabled={generating || generatingAll || list.length === 0}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  backgroundColor: (generating || generatingAll) ? "var(--bg-elevated)" : "var(--bg-elevated)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  cursor: (generating || generatingAll) ? "not-allowed" : "pointer",
+                }}
+              >
+                {generatingAll ? "Generating all…" : "Generate all"}
+              </button>
+              {Object.keys(generatedTests).length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadTests}
+                  disabled={downloadZipFeedback}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    backgroundColor: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    cursor: downloadZipFeedback ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {downloadZipFeedback ? "Downloaded" : `Download Tests (${Object.keys(generatedTests).length})`}
+                </button>
+              )}
             </div>
           )}
         </section>
@@ -559,7 +790,7 @@ export default function Home() {
                 </span>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={handleCopy}
@@ -592,6 +823,25 @@ export default function Home() {
               >
                 {downloadFeedback ? "Downloaded" : "Download"}
               </button>
+              {Object.keys(generatedTests).length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadTests}
+                  disabled={downloadZipFeedback}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    backgroundColor: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: downloadZipFeedback ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {downloadZipFeedback ? "Downloaded" : "Download Tests (ZIP)"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleGenerate}
