@@ -4,7 +4,7 @@ import { buildPrompt } from "../prompts";
 import { normalizeOutput } from "../normalize";
 import { isCode } from "@/lib/isCode";
 
-const GEMINI_MODEL = "models/gemini-flash-lite-latest";
+const GEMINI_MODEL = "models/gemini-flash-latest";
 
 /**
  * Error codes we use for consistency (Gemini is fallback, so we don't retry elsewhere).
@@ -25,8 +25,9 @@ export function createGeminiProvider(apiKey: string): ITestGeneratorProvider {
     name: "gemini",
 
     async generateTests(input: string, options?: GenerateOptions): Promise<GenerateResult> {
-      const isCodeInput = isCode(input) || options?.mode === "component";
-      const { prompt, isCode: isCodeFlag } = buildPrompt(input, isCodeInput, options?.mode);
+      const isSteps = options?.mode === "steps";
+      const isCodeInput = !isSteps && (isCode(input) || options?.mode === "component");
+      const { prompt, isCode: isCodeFlag, kind } = buildPrompt(input, isCodeInput, options?.mode);
 
       try {
         const result = await model.generateContent(prompt);
@@ -41,12 +42,14 @@ export function createGeminiProvider(apiKey: string): ITestGeneratorProvider {
           };
         }
 
-        const { tests, implementation } = normalizeOutput(rawText, isCodeFlag);
+        const norm = normalizeOutput(rawText, isCodeFlag);
+        const tests = kind === "steps" ? rawText.trim() : norm.tests;
+        const implementation = kind === "steps" ? undefined : norm.implementation ?? undefined;
         return {
           success: true,
           rawText,
           tests,
-          implementation: implementation ?? undefined,
+          implementation,
           isCode: isCodeFlag,
         };
       } catch (err) {

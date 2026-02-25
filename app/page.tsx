@@ -2,10 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { RepoInfo, TreeEntry, ComponentItem, ScanResult } from "@/lib/types";
+import { parseUploadedFiles } from "@/lib/localProject";
 
 const SCAN_STEPS = ["Validating URL…", "Fetching repository…", "Scanning for components…"];
 const GENERATE_STEPS = ["Analyzing component…", "Calling AI…", "Formatting tests…"];
 const STEP_INTERVAL_MS = 1500;
+
+type SourceKind = "github" | "local" | null;
 
 type GenerateResult = {
   success: true;
@@ -14,14 +17,25 @@ type GenerateResult = {
   metadata?: { provider: string };
 };
 
+function isReactFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".tsx") || lower.endsWith(".jsx");
+}
+
 export default function Home() {
+  const [sourceKind, setSourceKind] = useState<SourceKind>(null);
   const [repoUrl, setRepoUrl] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanStep, setScanStep] = useState(0);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [list, setList] = useState<ComponentItem[]>([]);
+  const [localFileContents, setLocalFileContents] = useState<Record<string, string>>({});
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -50,6 +64,19 @@ export default function Home() {
     return selectedPaths.includes(path);
   }
 
+  function selectAllComponents() {
+    setSelectedPaths(list.map((item) => item.path));
+  }
+
+  function toggleFolder(path: string) {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (!scanning) return;
     setScanStep(0);
@@ -70,6 +97,24 @@ export default function Home() {
     return () => clearInterval(id);
   }, [generating]);
 
+  function getAllFolderPaths(entries: TreeEntry[]): Set<string> {
+    const out = new Set<string>();
+    function walk(es: TreeEntry[]) {
+      for (const e of es) {
+        if (e.type === "folder") {
+          out.add(e.path);
+          if (e.children?.length) walk(e.children);
+        }
+      }
+    }
+    walk(entries);
+    return out;
+  }
+
+  useEffect(() => {
+    if (tree.length > 0) setExpandedFolders(getAllFolderPaths(tree));
+  }, [tree]);
+
   const filteredList = search.trim()
     ? list.filter(
         (item) =>
@@ -78,12 +123,12 @@ export default function Home() {
       )
     : list;
 
-  async function handleScan(e: React.FormEvent) {
-    e.preventDefault();
-    setScanError(null);
+  function clearProject() {
     setRepo(null);
     setTree([]);
     setList([]);
+    setLocalFileContents({});
+    setSourceKind(null);
     setSelectedPath(null);
     setSelectedPaths([]);
     setSourceContent(null);
@@ -93,6 +138,14 @@ export default function Home() {
     setCopyFeedback(false);
     setDownloadFeedback(false);
     setGeneratedTests({});
+    setExpandedFolders(new Set());
+  }
+
+  async function handleScan(e: React.FormEvent) {
+    e.preventDefault();
+    setScanError(null);
+    setUploadError(null);
+    clearProject();
     if (!repoUrl.trim()) {
       setScanError("Please enter a GitHub repository URL.");
       return;
@@ -110,6 +163,7 @@ export default function Home() {
         return;
       }
       const result = data as ScanResult;
+      setSourceKind("github");
       setRepo(result.repo);
       setTree(result.tree);
       setList(result.list);
@@ -120,8 +174,56 @@ export default function Home() {
     }
   }
 
+  async function handleUpload(files: FileList | null) {
+    setUploadError(null);
+    setScanError(null);
+    if (!files?.length) return;
+    setUploading(true);
+    setUploadProgress(0);
+    clearProject();
+    try {
+      const fileArray = Array.from(files);
+      const { tree: t, list: l, fileContents } = await parseUploadedFiles(
+        fileArray,
+        (loaded, total) => {
+          setUploadProgress(total > 0 ? Math.round((loaded / total) * 100) : 0);
+        }
+      );
+      setUploadProgress(100);
+      if (l.length === 0) {
+        setUploadError("No component files (.js, .jsx, .ts, .tsx) found. We skip node_modules, build, dist, and test files.");
+        return;
+      }
+      setSourceKind("local");
+      setTree(t);
+      setList(l);
+      setLocalFileContents(fileContents);
+    } catch {
+      setUploadError("Failed to read uploaded files. Try again.");
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    handleUpload(e.dataTransfer?.files ?? null);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   const loadSource = useCallback(async () => {
-    if (!repo || !selectedPath) return;
+    if (!selectedPath) return;
+    if (sourceKind === "local") {
+      setSourceContent(localFileContents[selectedPath] ?? "(File not in upload.)");
+      return;
+    }
+    if (!repo) return;
     setSourceLoading(true);
     setSourceContent(null);
     try {
@@ -140,38 +242,47 @@ export default function Home() {
     } finally {
       setSourceLoading(false);
     }
-  }, [repo, selectedPath]);
+  }, [sourceKind, repo, selectedPath, localFileContents]);
 
   useEffect(() => {
-    if (previewOpen && selectedPath && repo) loadSource();
-  }, [previewOpen, selectedPath, repo, loadSource]);
+    if (previewOpen && selectedPath) {
+      if (sourceKind === "local") setSourceContent(localFileContents[selectedPath] ?? "(File not in upload.)");
+      else if (repo) loadSource();
+    }
+  }, [previewOpen, selectedPath, repo, sourceKind, localFileContents, loadSource]);
 
   async function handleGenerate() {
-    if (!selectedPath || !repo) return;
+    if (!selectedPath) return;
     setGenError(null);
     setTests(null);
     setProviderUsed(null);
     setCopyFeedback(false);
     setDownloadFeedback(false);
-    let content = sourceContent;
-    if (content == null || content === "(Could not load file.)" || content === "(Failed to load file.)") {
-      setSourceLoading(true);
-      try {
-        const params = new URLSearchParams({
-          owner: repo.owner,
-          repo: repo.repo,
-          branch: repo.branch,
-          path: selectedPath,
-        });
-        const res = await fetch(`/api/repo/file?${params}`);
-        const data = await res.json();
-        content = res.ok ? data.content : "";
-      } catch {
-        content = "";
+    let content: string;
+    if (sourceKind === "local") {
+      content = localFileContents[selectedPath] ?? "";
+    } else {
+      if (!repo) return;
+      content = sourceContent ?? "";
+      if (content === "(Could not load file.)" || content === "(Failed to load file.)" || !content.trim()) {
+        setSourceLoading(true);
+        try {
+          const params = new URLSearchParams({
+            owner: repo.owner,
+            repo: repo.repo,
+            branch: repo.branch,
+            path: selectedPath,
+          });
+          const res = await fetch(`/api/repo/file?${params}`);
+          const data = await res.json();
+          content = res.ok ? data.content : "";
+        } catch {
+          content = "";
+        }
+        setSourceLoading(false);
       }
-      setSourceLoading(false);
     }
-    if (!content || !content.trim()) {
+    if (!content?.trim()) {
       setGenError("Could not load component source. Try again.");
       return;
     }
@@ -201,8 +312,22 @@ export default function Home() {
     }
   }
 
+  async function getContentForPath(path: string): Promise<string> {
+    if (sourceKind === "local") return localFileContents[path] ?? "";
+    if (!repo) return "";
+    const params = new URLSearchParams({
+      owner: repo.owner,
+      repo: repo.repo,
+      branch: repo.branch,
+      path,
+    });
+    const res = await fetch(`/api/repo/file?${params}`);
+    const data = await res.json();
+    return res.ok && typeof data.content === "string" ? data.content : "";
+  }
+
   async function handleGenerateSelected() {
-    if (!repo || selectedPaths.length === 0) return;
+    if (selectedPaths.length === 0) return;
     setGenError(null);
     setGenerating(true);
     const paths = [...selectedPaths];
@@ -210,15 +335,7 @@ export default function Home() {
     let lastPath: string | null = null;
     try {
       for (const path of paths) {
-        const params = new URLSearchParams({
-          owner: repo.owner,
-          repo: repo.repo,
-          branch: repo.branch,
-          path,
-        });
-        const fileRes = await fetch(`/api/repo/file?${params}`);
-        const fileData = await fileRes.json();
-        const content = fileRes.ok ? fileData.content : "";
+        const content = await getContentForPath(path);
         if (!content?.trim()) continue;
         const res = await fetch("/api/generate-tests", {
           method: "POST",
@@ -244,20 +361,12 @@ export default function Home() {
   }
 
   async function handleGenerateAll() {
-    if (!repo || list.length === 0) return;
+    if (list.length === 0) return;
     setGenError(null);
     setGeneratingAll(true);
     try {
       for (const item of list) {
-        const params = new URLSearchParams({
-          owner: repo.owner,
-          repo: repo.repo,
-          branch: repo.branch,
-          path: item.path,
-        });
-        const fileRes = await fetch(`/api/repo/file?${params}`);
-        const fileData = await fileRes.json();
-        const content = fileRes.ok ? fileData.content : "";
+        const content = await getContentForPath(item.path);
         if (!content?.trim()) continue;
         const res = await fetch("/api/generate-tests", {
           method: "POST",
@@ -282,6 +391,13 @@ export default function Home() {
       setGenError("No tests to download. Generate tests first.");
       return;
     }
+    const inputMode: "github" | "local" = sourceKind === "local" ? "local" : "github";
+    const rootFolderName =
+      sourceKind === "github" && repo
+        ? repo.repo
+        : sourceKind === "local" && entries[0]?.[0]
+          ? entries[0][0].replace(/\\/g, "/").split("/").filter(Boolean)[0]
+          : undefined;
     setDownloadZipFeedback(true);
     setGenError(null);
     try {
@@ -290,6 +406,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           files: entries.map(([path, tests]) => ({ path, tests })),
+          inputMode,
+          ...(rootFolderName && { rootFolderName }),
         }),
       });
       if (!res.ok) {
@@ -338,6 +456,7 @@ export default function Home() {
         const isSelected = selectedPath === entry.path;
         const isChecked = isPathSelected(entry.path);
         const hasGenerated = entry.path in generatedTests;
+        const isReact = isReactFile(entry.path);
         return (
           <div
             key={entry.path}
@@ -374,25 +493,38 @@ export default function Home() {
             {hasGenerated && (
               <span style={{ fontSize: 12, opacity: 0.9 }} title="Test generated">✓</span>
             )}
-            {entry.name} <span style={{ opacity: 0.8, fontSize: 12 }}>{entry.path}</span>
+            <span style={isReact ? { color: "var(--accent)", fontWeight: 500 } : undefined}>
+              {entry.name}
+            </span>
+            <span style={{ opacity: 0.8, fontSize: 12 }}>{entry.path}</span>
           </div>
         );
       }
       const children = entry.children ?? [];
+      const isExpanded = expandedFolders.has(entry.path);
       return (
         <div key={entry.path}>
           <div
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleFolder(entry.path)}
+            onKeyDown={(e) => e.key === "Enter" && toggleFolder(entry.path)}
             style={{
               padding: "4px 12px",
               paddingLeft: 12 + depth * 16,
               fontSize: 13,
               fontWeight: 600,
               color: "var(--text-muted)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
+            <span style={{ width: 16, display: "inline-block" }}>{isExpanded ? "▼" : "▶"}</span>
             {entry.name}/
           </div>
-          {children.length > 0 && renderTree(children, depth + 1)}
+          {isExpanded && children.length > 0 && renderTree(children, depth + 1)}
         </div>
       );
     });
@@ -408,52 +540,130 @@ export default function Home() {
         .map((item) => ({ type: "file" as const, path: item.path, name: item.name }))
     : tree;
 
+  const hasProject = list.length > 0 && (sourceKind === "github" || sourceKind === "local");
+
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
+    <main className="main-content">
       <h1 style={{ marginBottom: 8, fontSize: 24, fontWeight: 600, color: "var(--text)" }}>
         UI Component Test Generator
       </h1>
       <p style={{ color: "var(--text-muted)", marginBottom: 24, fontSize: 14 }}>
-        Paste a GitHub repository URL to scan for UI components (.js, .jsx, .ts, .tsx), select one, and generate Jest + React Testing Library tests.
+        Add a GitHub repository URL or upload a local project folder. We detect React/Next.js components (.tsx, .jsx, .ts, .js), then generate Jest + React Testing Library tests.
       </p>
 
-      <form onSubmit={handleScan}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <input
-            type="url"
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="https://github.com/owner/repo or .../owner/repo/tree/branch"
-            disabled={scanning}
-            style={{
-              flex: "1",
-              minWidth: 280,
-              padding: "10px 14px",
-              fontSize: 14,
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              backgroundColor: "var(--bg-elevated)",
-              color: "var(--text)",
-            }}
-          />
-          <button
-            type="submit"
-            disabled={scanning}
-            style={{
-              padding: "10px 20px",
-              fontSize: 14,
-              fontWeight: 600,
-              backgroundColor: scanning ? "var(--accent-disabled)" : "var(--accent)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              cursor: scanning ? "not-allowed" : "pointer",
-            }}
-          >
-            {scanning ? "Scanning…" : "Scan repository"}
-          </button>
+      <section style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>
+            A. GitHub Repository
+          </h2>
+          <form onSubmit={handleScan}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                type="url"
+                value={repoUrl}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                placeholder="https://github.com/owner/repo or .../owner/repo/tree/branch"
+                disabled={scanning}
+                style={{
+                  flex: "1",
+                  minWidth: 280,
+                  padding: "10px 14px",
+                  fontSize: 14,
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  backgroundColor: "var(--bg-elevated)",
+                  color: "var(--text)",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={scanning}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  backgroundColor: scanning ? "var(--accent-disabled)" : "var(--accent)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  cursor: scanning ? "not-allowed" : "pointer",
+                }}
+              >
+                {scanning ? "Scanning…" : "Scan repository"}
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
+
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>
+            B. Local Project Upload
+          </h2>
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            style={{
+              border: "2px dashed var(--border)",
+              borderRadius: 12,
+              padding: 24,
+              textAlign: "center",
+              backgroundColor: "var(--bg-elevated)",
+              cursor: "pointer",
+            }}
+            onClick={() => document.getElementById("local-upload-input")?.click()}
+          >
+            <input
+              id="local-upload-input"
+              type="file"
+              multiple
+              {...({ webkitdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
+              style={{ display: "none" }}
+              onChange={(e) => handleUpload(e.target.files)}
+            />
+            {uploading ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <p style={{ margin: 0, color: "var(--text)", fontSize: 14 }}>
+                  Reading files… {uploadProgress != null ? `${uploadProgress}%` : ""}
+                </p>
+                {uploadProgress != null && (
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: 280,
+                      height: 8,
+                      backgroundColor: "var(--border)",
+                      borderRadius: 4,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${uploadProgress}%`,
+                        height: "100%",
+                        backgroundColor: "var(--accent)",
+                        borderRadius: 4,
+                        transition: "width 0.2s ease-out",
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 8px 0", color: "var(--text)", fontSize: 14 }}>
+                  Drag & drop a folder here, or click to browse
+                </p>
+                <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12 }}>
+                  We use .js, .jsx, .ts, .tsx and skip node_modules, build, and test files.
+                </p>
+              </>
+            )}
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+            For folder upload: use a browser that supports folder selection (Chrome, Edge). For multiple files, select several files at once.
+          </p>
+        </div>
+      </section>
 
       {scanning && (
         <div
@@ -507,6 +717,22 @@ export default function Home() {
         </div>
       )}
 
+      {uploadError && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            backgroundColor: "var(--error-bg)",
+            border: "1px solid var(--error-border)",
+            borderRadius: 8,
+            color: "var(--error-text)",
+            fontSize: 14,
+          }}
+        >
+          {uploadError}
+        </div>
+      )}
+
       {!scanning && list.length === 0 && repo && (
         <div
           style={{
@@ -524,11 +750,30 @@ export default function Home() {
         </div>
       )}
 
-      {list.length > 0 && repo && (
+      {hasProject && (
         <section style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: "var(--text)" }}>
-            Components ({list.length})
-          </h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: "var(--text)" }}>
+              Project structure — {list.length} component{list.length !== 1 ? "s" : ""}
+              {selectedPaths.length > 0 && ` · ${selectedPaths.length} selected`}
+            </h2>
+            <button
+              type="button"
+              onClick={selectAllComponents}
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                fontWeight: 500,
+                backgroundColor: "var(--bg-elevated)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                cursor: "pointer",
+              }}
+            >
+              Select All Components
+            </button>
+          </div>
           <input
             type="search"
             value={search}
@@ -559,6 +804,7 @@ export default function Home() {
                 const isSelected = selectedPath === item.path;
                 const isChecked = isPathSelected(item.path);
                 const hasGenerated = item.path in generatedTests;
+                const isReact = isReactFile(item.path);
                 return (
                   <div
                     key={item.path}
@@ -594,7 +840,8 @@ export default function Home() {
                     {hasGenerated && (
                       <span style={{ fontSize: 12, opacity: 0.9 }} title="Test generated">✓</span>
                     )}
-                    <strong>{item.name}</strong> <span style={{ opacity: 0.9 }}>{item.path}</span>
+                    <strong style={isReact ? { color: "var(--accent)" } : undefined}>{item.name}</strong>
+                    <span style={{ opacity: 0.9 }}>{item.path}</span>
                   </div>
                 );
               })
@@ -790,6 +1037,37 @@ export default function Home() {
                 </span>
               )}
             </div>
+            {Object.keys(generatedTests).length > 1 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>View:</span>
+                {Object.keys(generatedTests).map((path) => {
+                  const name = path.split("/").pop()?.replace(/\.(jsx?|tsx?)$/i, "") ?? path;
+                  const isActive = selectedPath === path;
+                  return (
+                    <button
+                      key={path}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPath(path);
+                        setTests(generatedTests[path]);
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: 12,
+                        fontWeight: isActive ? 600 : 500,
+                        backgroundColor: isActive ? "var(--accent)" : "var(--bg-elevated)",
+                        color: isActive ? "#fff" : "var(--text)",
+                        border: isActive ? "none" : "1px solid var(--border)",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -881,7 +1159,7 @@ export default function Home() {
       )}
 
       {/* <p style={{ marginTop: 32, color: "var(--text-muted)", fontSize: 12 }}>
-        Optional: set GITHUB_TOKEN in .env.local for higher API rate limits. Set GEMINI_API_KEY for test generation.
+        Optional: set GITHUB_TOKEN in .env.local for higher API rate limits. Set BRAIN_API_KEY, CLAUDE_API_KEY, or GEMINI_API_KEY for test generation.
       </p> */}
     </main>
   );

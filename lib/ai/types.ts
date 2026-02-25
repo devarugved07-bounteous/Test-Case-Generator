@@ -3,11 +3,11 @@
  * Business logic depends only on these types; providers implement the interface.
  */
 
-export type ProviderName = "claude" | "gemini";
+export type ProviderName = "brain" | "claude" | "gemini";
 
 export type GenerateOptions = {
-  /** When "component", use component test prompt and treat input as code */
-  mode?: "component";
+  /** When "component", use component test prompt and treat input as code. When "steps", input is the full steps prompt; return raw response as steps.txt content. */
+  mode?: "component" | "steps";
 };
 
 export type GenerateSuccess = {

@@ -4,6 +4,7 @@ import { buildPrompt } from "../prompts";
 import { normalizeOutput } from "../normalize";
 import { isCode } from "@/lib/isCode";
 
+// const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 const MAX_TOKENS = 8192;
 
@@ -45,8 +46,9 @@ export function createClaudeProvider(apiKey: string): ITestGeneratorProvider {
     name: "claude",
 
     async generateTests(input: string, options?: GenerateOptions): Promise<GenerateResult> {
-      const isCodeInput = isCode(input) || options?.mode === "component";
-      const { prompt, isCode: isCodeFlag } = buildPrompt(input, isCodeInput, options?.mode);
+      const isSteps = options?.mode === "steps";
+      const isCodeInput = !isSteps && (isCode(input) || options?.mode === "component");
+      const { prompt, isCode: isCodeFlag, kind } = buildPrompt(input, isCodeInput, options?.mode);
 
       try {
         const message = await client.messages.create({
@@ -67,12 +69,14 @@ export function createClaudeProvider(apiKey: string): ITestGeneratorProvider {
           };
         }
 
-        const { tests, implementation } = normalizeOutput(rawText, isCodeFlag);
+        const norm = normalizeOutput(rawText, isCodeFlag);
+        const tests = kind === "steps" ? rawText.trim() : norm.tests;
+        const implementation = kind === "steps" ? undefined : norm.implementation ?? undefined;
         return {
           success: true,
           rawText,
           tests,
-          implementation: implementation ?? undefined,
+          implementation,
           isCode: isCodeFlag,
         };
       } catch (err) {

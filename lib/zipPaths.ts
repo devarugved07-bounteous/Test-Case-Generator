@@ -1,12 +1,25 @@
 /**
- * Maps repository file paths to ZIP entry paths preserving full directory hierarchy.
- * Only the filename gets .test before the extension; path is unchanged (with optional src/ prefix).
+ * Maps repository file paths to ZIP entry paths.
+ * Mirrors original project structure with no extra wrapper folders (no "source", no duplicates).
+ *
+ * - GitHub: use repository name as root folder; path is repo-relative.
+ * - Local: use path as-is (already includes uploaded root folder); only filename becomes .test.*
  */
 
-const DEFAULT_ROOT = "src";
+export type ZipInputMode = "github" | "local";
+
+export type GetTestZipEntryPathOptions = {
+  inputMode: ZipInputMode;
+  /**
+   * Root folder name for the ZIP.
+   * GitHub: repository name (e.g. "react-app").
+   * Local: optional; if omitted, derived from first path segment.
+   */
+  rootFolderName?: string;
+};
 
 /**
- * Normalize path to forward slashes (no leading/trailing).
+ * Normalize path: forward slashes, no leading/trailing slashes.
  */
 export function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
@@ -26,27 +39,31 @@ export function getTestFileName(repoPath: string): string {
 }
 
 /**
- * Build full relative path for ZIP entry: preserve directory hierarchy, only change filename to .test.<ext>.
- * If the path has no root folder (e.g. "components/Button.tsx" or "Button.tsx"), prepend "src/" so the
- * archive has a clear root. Path separators are forward slashes.
+ * Build ZIP entry path. Preserves nested structure; no artificial wrapper folders.
  *
- * Examples:
- *   src/components/Button.tsx     → src/components/Button.test.tsx
- *   src/hooks/useAuth.ts          → src/hooks/useAuth.test.ts
- *   src/pages/Home.tsx            → src/pages/Home.test.tsx
- *   components/Button.tsx         → src/components/Button.test.tsx (root prepended)
+ * GitHub: repo paths are relative to repo root (e.g. src/components/Button.tsx).
+ *   ZIP entry = rootFolderName/src/components/Button.test.tsx
+ *
+ * Local: paths include uploaded root (e.g. react-app/src/components/Button.tsx).
+ *   ZIP entry = react-app/src/components/Button.test.tsx (path with test filename only).
  */
-export function getTestZipEntryPath(repoPath: string): string {
+export function getTestZipEntryPath(
+  repoPath: string,
+  options: GetTestZipEntryPathOptions
+): string {
   const normalized = normalizePath(repoPath);
   const segments = normalized.split("/").filter(Boolean);
   const testFileName = getTestFileName(repoPath);
+  const relativePathWithTestFile =
+    segments.length <= 1
+      ? testFileName
+      : [...segments.slice(0, -1), testFileName].join("/");
 
-  if (segments.length <= 1) {
-    return `${DEFAULT_ROOT}/${testFileName}`;
+  if (options.inputMode === "github") {
+    const root = (options.rootFolderName ?? "repo").replace(/^\/+|\/+$/g, "").split("/")[0] || "repo";
+    return relativePathWithTestFile ? `${root}/${relativePathWithTestFile}` : `${root}/${testFileName}`;
   }
 
-  const dirParts = segments.slice(0, -1);
-  const hasRoot = /^(src|app|lib)$/i.test(dirParts[0] ?? "");
-  const dirPath = hasRoot ? dirParts.join("/") : `${DEFAULT_ROOT}/${dirParts.join("/")}`;
-  return `${dirPath}/${testFileName}`;
+  // Local: path already has full structure; only replace filename. No wrapper, no duplicate nesting.
+  return relativePathWithTestFile;
 }
