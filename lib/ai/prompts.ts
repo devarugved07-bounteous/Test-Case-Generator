@@ -198,24 +198,34 @@ Format EXACTLY:
 <tests>
 `;
 
-export const STEPS_PROMPT_INSTRUCTION = `Generate steps.txt explaining how to install and run tests.
+export const STEPS_PROMPT_INSTRUCTION = `You are an expert in Jest + React Testing Library setup. Generate the exact content for a plain-text file named steps.txt.
 
-Works for React, Vite, CRA, Next.js, and TypeScript.
+CRITICAL — CONFIG FILES MUST BE COMPLETE:
+You MUST output the FULL, copy-paste-ready content for every config file. Do NOT use placeholders, "e.g.", or partial snippets. The user must be able to create each file by copying your output exactly.
 
-Include:
-1. Purpose
-2. Supported projects
-3. Where to place files
-4. Prerequisites
-5. Install dependencies
-6. Config files
-7. package.json script
-8. Run tests
-9. Notes
-10. Advanced tests
+Do NOT use preset: 'ts-jest'. Use babel-jest for ALL file types (.js, .jsx, .ts, .tsx). TypeScript is supported via Babel; no ts-jest required.
 
-Plain text only.
-`;
+REQUIRED FILES (you must include full contents for each):
+1. babel.config.cjs (project root) — full module.exports with presets: ["@babel/preset-env", { targets: { node: "current" } }] and ["@babel/preset-react", { runtime: "automatic" }].
+2. jest.config.cjs (project root) — full module.exports with: testEnvironment "jsdom"; transform "^.+\\.(js|jsx|ts|tsx)$" -> "babel-jest"; testPathIgnorePatterns ["/node_modules/", "/dist/", "/build/", "/config/"]; moduleNameMapper with "\\.(css|less|sass|scss)$" -> "identity-obj-proxy", "\\.(svg|png|jpg|jpeg|gif|webp|avif)$" -> "<rootDir>/src/__mocks__/fileMock.js", "^/vite.svg$" -> "<rootDir>/src/__mocks__/fileMock.js"; moduleFileExtensions ["js","jsx","ts","tsx"]; setupFilesAfterEnv ["<rootDir>/src/setupTests.js"].
+3. src/__mocks__/fileMock.js — REQUIRED ONLY IF NEEDED. Create folder src/__mocks__/ and file fileMock.js. Full content: module.exports = "test-file-stub";
+4. src/setupTests.js — REQUIRED. This file is needed so Jest runs @testing-library/jest-dom before each test. Full content: import "@testing-library/jest-dom";
+
+If you omit setupTests.js or fileMock.js, or give incomplete config, the tests will not run. Always include both with full contents.
+
+SECTIONS (in order):
+1. Purpose — This guide explains how to install dependencies and run tests. Works for React, Vite, CRA, Next.js, and TypeScript.
+2. Supported projects — React, Vite, Create React App (CRA), Next.js, TypeScript.
+3. Where to place files — Place test files alongside production files (e.g. src/app/layout.test.tsx next to src/app/layout.tsx). Or place extracted ZIP contents so folder structure matches.
+4. Prerequisites — Node.js and npm (or yarn). Verify with node -v and npm -v.
+5. Install dependencies — Full command: npm install --save-dev jest babel-jest @babel/preset-env @babel/preset-react @testing-library/react @testing-library/jest-dom @testing-library/user-event @testing-library/dom identity-obj-proxy jest-environment-jsdom. (yarn alternative if you want.)
+6. Config files — For EACH of the 4 files above, write the exact file path and then the COMPLETE file content (every line). No code fences; plain text. User must be able to copy each block into the file as-is.
+7. package.json script — "test": "jest". Note: CRA may already have Jest.
+8. Run tests — npm test or npm test -- <path/to/test.file.tsx>. (yarn test if desired.)
+9. Notes — setupTests.js is required for @testing-library/jest-dom. fileMock.js is required for Vite/assets. TypeScript works via Babel (no ts-jest). CRA may already include Jest. Next.js client components supported.
+10. Advanced tests — Same setup supports mocked modules, async tests, hooks/context, API mocking. Do not simplify.
+
+Use plain text only. No markdown code fences (no \`\`\`). Output ONLY the steps.txt content. Every config file must be shown in full.`;
 
 export type PromptKind = "code" | "component" | "requirement" | "steps";
 
@@ -237,11 +247,13 @@ export function buildStepsPrompt(
   return `${STEPS_PROMPT_INSTRUCTION}
 
 CONTEXT:
-- Root folder: ${rootFolder}
-- Test files:
+- Root folder in ZIP: ${rootFolder}
+- Generated test file paths:
 ${pathList}
 
-Generate steps.txt now.`;
+Remember: output FULL contents for babel.config.cjs, jest.config.cjs, src/__mocks__/fileMock.js, and src/setupTests.js. setupTests.js is required for @testing-library/jest-dom. Do not use ts-jest; use babel-jest.
+
+Generate the complete steps.txt now.`;
 }
 
 export function buildPrompt(
