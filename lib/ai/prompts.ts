@@ -1,21 +1,20 @@
 /**
- * Shared prompts for deterministic, production-ready test generation.
- * Ensures tests run directly with `npm test` in CRA, Next.js, Vite, or custom Jest setups.
+ * Shared prompts for simple, beginner-friendly Jest + React Testing Library test generation.
+ * Supports React (plain), Vite, CRA, Next.js, and TypeScript.
  */
 
 const FILE_PLACEMENT_RULES = `
 FILE PLACEMENT:
 - Place the test file beside its corresponding component.
-- Maintain the existing project structure.
-- Detect and use the correct relative path from project root.
-- The header Path and Run command MUST match the actual file location.
+- Maintain project structure.
+- Header Path and Run command MUST match actual file location.
+- Support .js, .jsx, .ts, .tsx.
+- Resolve correct component filename (page.tsx vs index.tsx vs Component.tsx)
+- Never guess filename
 `;
 
 const HEADER_COMMENT_RULE = `
 HEADER COMMENT (REQUIRED):
-- Include a short header comment at the top of the file.
-
-Format EXACTLY as:
 
 /**
  * Test: <ComponentOrFunctionName>
@@ -24,185 +23,199 @@ Format EXACTLY as:
  */
 
 - Use npm test (NEVER npx jest).
-- Keep it minimal.
-- Do NOT include explanations.
-- Do NOT include dependency installation steps.
+- No explanations.
 `;
 
-const IMPORT_PATH_SAFETY = `
-IMPORT & PATH SAFETY:
-- Resolve correct relative path to the component.
-- Match exact file name and casing.
-- Support .js, .jsx, .ts, .tsx.
+const STACK_AND_IMPORTS = `
+STACK & IMPORTS:
+- Supports React, Vite, CRA, Next.js, TypeScript.
+- Detect stack only for compatibility.
+- Do NOT add router/providers.
 - Do NOT duplicate imports.
-- Do NOT import React in React 17+ projects unless required.
+- Do NOT import React unless required.
+- For Next.js App Router:
+    - Use "./page" for page.tsx
+    - DO NOT use "./index" inside app/
+    - Detect correct filename before importing
 `;
 
-const CONTEXT_AND_HOOK_RULES = `
-CONTEXT & HOOKS (CRITICAL):
-- If component uses a custom hook (e.g. useTodos), mock the hook.
-- Use: jest.mock('module', () => ({ hookName: jest.fn() }))
-- Do NOT wrap components with Context.Provider unless explicitly required.
-- Do NOT access Context.Provider directly.
-- Store jest.fn() mocks in variables for stable assertions.
+const SIMPLE_MOCKING = `
+MOCKING:
+- Mock only when jsdom would break.
+- Do NOT auto-wrap providers.
+- Example:
+  jest.mock('path', () => ({ hook: jest.fn() }));
 `;
 
-const STABLE_TESTING_PRACTICES = `
-STABLE TESTING PRACTICES:
-- Prefer accessible queries: getByRole, getByLabelText, getByText.
-- Avoid dynamic IDs and brittle selectors.
-- Avoid implementation details.
-- Use userEvent for interactions.
-- Tests must remain stable after UI refactors.
+const TEST_FOCUS = `
+TEST FOCUS:
+- Smoke render
+- User interactions
+- Conditional rendering
+- Props behavior
+- Visible text
+- Accessibility basics
 `;
 
-const RUNTIME_STABILITY_RULES = `
-RUNTIME STABILITY:
-- Tests must run without manual setup.
-- Compatible with CRA (react-scripts), Next.js, Vite, custom Jest.
-- Must pass in jsdom environment.
-- Avoid unnecessary async.
+const BUTTON_NAME_RESILIENCE = `
+BUTTON & LABEL RESILIENCE:
+- Button text may be split across nodes.
+- Prefer:
+    getByRole('button', { name: /count is/i })
+- Avoid exact text like /count is 0/i
+- Verify updates using toHaveTextContent()
+`;
+
+const QUERIES_AND_INTERACTIONS = `
+QUERIES & INTERACTIONS:
+- Prefer getByRole
+- getByText for visible text
+- getByLabelText for forms
+- Use userEvent (avoid fireEvent)
+- Avoid brittle selectors
+`;
+
+const USER_EVENT_AND_ASYNC_RULES = `
+USER EVENT SAFETY:
+- For user-event v14+ ALWAYS:
+
+    const user = userEvent.setup();
+    await user.click(button);
+
+- Interaction tests MUST be async.
+- NEVER call userEvent.click() directly.
+`;
+
+const TEXT_MATCHING_STABILITY = `
+TEXT MATCHING:
+- JSX may split text across elements.
+- Prefer flexible matchers:
+
+    getByText(/edit.*save/i)
+
+- Avoid exact full-string matches.
+`;
+
+const ACCESSIBLE_NAME_STABILITY = `
+ACCESSIBLE NAME STABILITY:
+- Inline tags (<code>, <span>) split text.
+- Use partial or regex matching.
+`;
+
+const ASSERTION_STABILITY = `
+ASSERTION STABILITY:
+- Prefer toHaveTextContent() for dynamic text.
+- Avoid brittle exact matches.
+- Assert user-visible behavior.
+`;
+
+const AVOID_RULES = `
+DO NOT:
+- Mock next/image or next/link
+- Add router/providers
+- Over-mock imports
+- Write complex setup
+`;
+
+const RUNTIME_AND_OUTPUT = `
+RUNTIME & OUTPUT:
+- Tests must run with npm test in jsdom.
+- Must work with default Vite + React template.
 - No unused imports.
-- No console warnings.
-`;
-
-const STRICT_OUTPUT_RULES = `
-STRICT OUTPUT RULES (ABSOLUTE):
 - Output ONLY executable test code.
-- First line MUST be the header comment.
-- Do NOT include markdown, backticks, explanations, or extra text.
-- Do NOT add anything before or after the test file.
-- Must run directly with npm test without modification.
-`;
-
-const OUTPUT_QUALITY = `
-OUTPUT QUALITY:
-- Production-ready tests only.
-- Clean, minimal, deterministic structure.
-- Clear describe/it blocks.
-- Proper mocking.
-- No over-mocking.
-- Tests must pass when executed.
+- First line = header comment.
+- No markdown or explanations.
 `;
 
 export const CODE_PROMPT = `You are an expert in Jest and React Testing Library.
 
-The user will provide JavaScript/TypeScript/React code.
+Generate beginner-friendly, reliable tests.
 
-Tasks:
-1. Detect whether the code is:
-   - React component
-   - Custom hook
-   - API route
-   - Plain function
-2. Generate a complete Jest test file.
-3. Cover:
-   - Rendering
-   - User interactions
-   - Props behavior
-   - Conditional rendering
-   - Edge cases
-4. Use descriptive test names.
-5. Import from:
-   - @testing-library/react
-   - @testing-library/jest-dom
-   - @testing-library/user-event (when interactions exist)
-6. Mock CSS, assets, and external modules if present.
+IMPORTS:
+- @testing-library/react
+- @testing-library/jest-dom
+- @testing-library/user-event (REQUIRED when interactions exist; use userEvent.setup())
 
 ${FILE_PLACEMENT_RULES}
 ${HEADER_COMMENT_RULE}
-${IMPORT_PATH_SAFETY}
-${CONTEXT_AND_HOOK_RULES}
-${STABLE_TESTING_PRACTICES}
-${RUNTIME_STABILITY_RULES}
-${STRICT_OUTPUT_RULES}
-${OUTPUT_QUALITY}
+${STACK_AND_IMPORTS}
+${SIMPLE_MOCKING}
+${TEST_FOCUS}
+${BUTTON_NAME_RESILIENCE}
+${QUERIES_AND_INTERACTIONS}
+${USER_EVENT_AND_ASYNC_RULES}
+${TEXT_MATCHING_STABILITY}
+${ACCESSIBLE_NAME_STABILITY}
+${ASSERTION_STABILITY}
+${AVOID_RULES}
+${RUNTIME_AND_OUTPUT}
 
 Return ONLY the test file code.`;
 
 export const COMPONENT_TEST_PROMPT = `You are an expert in Jest and React Testing Library.
 
-The user will provide a React component (.jsx or .tsx).
+Generate tests for the provided React component.
 
-Generate ONE complete test file.
-
-Tests must cover:
-- Rendering
-- Interactions
-- Props behavior
-- Conditional rendering
-- Edge cases
-
-Use proper mocking patterns.
+IMPORTS:
+- @testing-library/react
+- @testing-library/jest-dom
+- @testing-library/user-event (use setup())
 
 ${FILE_PLACEMENT_RULES}
 ${HEADER_COMMENT_RULE}
-${IMPORT_PATH_SAFETY}
-${CONTEXT_AND_HOOK_RULES}
-${STABLE_TESTING_PRACTICES}
-${RUNTIME_STABILITY_RULES}
-${STRICT_OUTPUT_RULES}
-${OUTPUT_QUALITY}
+${STACK_AND_IMPORTS}
+${SIMPLE_MOCKING}
+${TEST_FOCUS}
+${BUTTON_NAME_RESILIENCE}
+${QUERIES_AND_INTERACTIONS}
+${USER_EVENT_AND_ASYNC_RULES}
+${TEXT_MATCHING_STABILITY}
+${ACCESSIBLE_NAME_STABILITY}
+${ASSERTION_STABILITY}
+${AVOID_RULES}
+${RUNTIME_AND_OUTPUT}
 
 Return ONLY the test file code.`;
 
-export const REQUIREMENT_PROMPT = `You are an expert in JavaScript/TypeScript and Jest/React Testing Library.
+export const REQUIREMENT_PROMPT = `You are an expert in JavaScript/TypeScript and Jest/RTL.
 
-The user will provide a plain English requirement.
-
-Tasks:
-1. Write the implementation.
-2. Write a complete Jest test file.
-3. Cover rendering, interactions, props, conditional rendering, edge cases.
+Write implementation + beginner-friendly tests.
 
 ${HEADER_COMMENT_RULE}
-${IMPORT_PATH_SAFETY}
-${CONTEXT_AND_HOOK_RULES}
-${STABLE_TESTING_PRACTICES}
-${RUNTIME_STABILITY_RULES}
-${STRICT_OUTPUT_RULES}
-${OUTPUT_QUALITY}
+${STACK_AND_IMPORTS}
+${USER_EVENT_AND_ASYNC_RULES}
+${TEXT_MATCHING_STABILITY}
+${ASSERTION_STABILITY}
+${AVOID_RULES}
+${RUNTIME_AND_OUTPUT}
 
 Format EXACTLY:
 
 ---IMPLEMENTATION---
-<full implementation>
+<implementation>
 
 ---TESTS---
-<full test file>
+<tests>
 `;
 
-/** Instructions for the LLM to generate steps.txt (setup and run instructions for the user). */
-export const STEPS_PROMPT_INSTRUCTION = `You are an expert in JavaScript/TypeScript testing setup. Generate the exact content for a plain-text file named steps.txt that will be bundled in a ZIP with generated Jest + React Testing Library test files.
+export const STEPS_PROMPT_INSTRUCTION = `Generate steps.txt explaining how to install and run tests.
 
-The steps.txt must give the user clear, copy-paste-ready instructions to run the tests. Include the following sections in order:
+Works for React, Vite, CRA, Next.js, and TypeScript.
 
-1. PURPOSE — One short paragraph: this file explains how to install dependencies and run the generated Jest test cases.
+Include:
+1. Purpose
+2. Supported projects
+3. Where to place files
+4. Prerequisites
+5. Install dependencies
+6. Config files
+7. package.json script
+8. Run tests
+9. Notes
+10. Advanced tests
 
-2. WHERE TO PLACE THE EXTRACTED FILES — Clear instructions so tests run without path changes:
-   - Tell the user to extract the ZIP and place the extracted folder (or its contents) in their application folder so that the directory structure matches.
-   - Example: if the ZIP has a root folder like "my-app" with "my-app/src/Button.test.tsx" inside, the user should either (a) extract so that "my-app" becomes their project root, or (b) merge the contents of "my-app" (e.g. the "src" folder and the test files) into their existing project root. That way test file paths and imports work without modification.
-   - State explicitly: place the extracted root folder as your project root (or merge its contents into your project root) so that relative paths in the test files match your app structure.
-
-3. PREREQUISITES — Node.js and npm (or yarn) installed.
-
-4. INSTALL DEPENDENCIES — Exact npm install command listing all required dev dependencies:
-   - jest, babel-jest, @babel/preset-env, @babel/preset-react
-   - @testing-library/react, @testing-library/jest-dom, @testing-library/user-event
-   - identity-obj-proxy, jest-environment-jsdom
-   (Include any other packages commonly needed for React/JSX Jest setups if relevant.)
-
-5. CONFIG FILES TO ADD — Tell the user to create these files in the project root if missing:
-   - babel.config.cjs — show the full contents (presets: @babel/preset-env, @babel/preset-react).
-   - jest.config.cjs — show the full contents: testEnvironment "jsdom", transform with babel-jest, testPathIgnorePatterns for node_modules/dist/build/config files, moduleNameMapper for CSS (identity-obj-proxy), moduleFileExtensions.
-
-6. PACKAGE.JSON — Ensure "scripts" includes "test": "jest".
-
-7. RUN TESTS — How to run all tests (e.g. npm test) and optionally how to run a single test file (e.g. npm test -- path/to/File.test.tsx).
-
-8. NOTES — Short bullets: jest-environment-jsdom for DOM testing, babel-jest for JSX, CSS mocked via identity-obj-proxy.
-
-Use clear section headers (e.g. PURPOSE, WHERE TO PLACE THE EXTRACTED FILES, PREREQUISITES, INSTALL DEPENDENCIES, CONFIG FILES TO ADD, RUN TESTS, NOTES). Use plain text only — no Markdown, no code fences. Output ONLY the steps.txt content so it can be written directly to a file.`;
+Plain text only.
+`;
 
 export type PromptKind = "code" | "component" | "requirement" | "steps";
 
@@ -212,23 +225,23 @@ export type BuildPromptResult = {
   kind: PromptKind;
 };
 
-/**
- * Build the full prompt for generating steps.txt content.
- * Used when exporting tests to ZIP; the LLM generates setup/run instructions.
- */
-export function buildStepsPrompt(testPaths: string[], rootFolder: string): string {
+export function buildStepsPrompt(
+  testPaths: string[],
+  rootFolder: string
+): string {
   const pathList =
     testPaths.length > 0
       ? testPaths.map((p) => `  - ${p}`).join("\n")
       : "  (no paths)";
+
   return `${STEPS_PROMPT_INSTRUCTION}
 
 CONTEXT:
-- Root folder in the ZIP: ${rootFolder}
-- Generated test file paths (relative to project root):
+- Root folder: ${rootFolder}
+- Test files:
 ${pathList}
 
-Generate the complete steps.txt content now.`;
+Generate steps.txt now.`;
 }
 
 export function buildPrompt(
@@ -237,16 +250,16 @@ export function buildPrompt(
   mode?: "component" | "steps"
 ): BuildPromptResult {
   if (mode === "steps") {
-    return {
-      prompt: input,
-      isCode: false,
-      kind: "steps",
-    };
+    return { prompt: input, isCode: false, kind: "steps" };
   }
 
   if (mode === "component") {
     return {
-      prompt: `${COMPONENT_TEST_PROMPT}\n\nComponent source:\n\n${input}`,
+      prompt: `${COMPONENT_TEST_PROMPT}
+
+Component source:
+
+${input}`,
       isCode: true,
       kind: "component",
     };
@@ -254,14 +267,22 @@ export function buildPrompt(
 
   if (isCodeInput) {
     return {
-      prompt: `${CODE_PROMPT}\n\nGenerate Jest tests for this code:\n\n${input}`,
+      prompt: `${CODE_PROMPT}
+
+Generate Jest tests for this code:
+
+${input}`,
       isCode: true,
       kind: "code",
     };
   }
 
   return {
-    prompt: `${REQUIREMENT_PROMPT}\n\nRequirement:\n\n${input}`,
+    prompt: `${REQUIREMENT_PROMPT}
+
+Requirement:
+
+${input}`,
     isCode: false,
     kind: "requirement",
   };

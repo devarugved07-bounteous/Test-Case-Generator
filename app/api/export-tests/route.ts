@@ -12,64 +12,140 @@ const FILENAME = "generated-tests.zip";
 /** Fallback steps.txt when LLM generation fails or no provider is configured. */
 const FALLBACK_STEPS_TXT = `--------------------------------
 PURPOSE
-This file explains how to install dependencies and run the generated Jest test cases.
+This file explains how to install dependencies and run the generated Jest test cases. The same setup works for: React (plain), React + Vite, Create React App (CRA), Next.js, and React + TypeScript projects.
+
+SUPPORTED PROJECT TYPES
+* React (plain)
+* React + Vite
+* Create React App (CRA)
+* Next.js (client components; treat as standard React)
+* React + TypeScript (.ts, .tsx)
 
 WHERE TO PLACE THE EXTRACTED FILES
-Extract the ZIP and place the extracted folder (or merge its contents) into your application folder so that the directory structure matches. For example: if the ZIP contains a root folder (e.g. "my-app") with "src/Button.test.tsx" inside, place that root folder as your project root, or merge the contents of the root folder into your existing project root. This way test file paths and imports work without any path changes.
+Extract the ZIP file. Place the extracted root folder as your project root OR merge its contents into your existing project root.
 
-SETUP
+Example:
+If the ZIP contains:
 
-1. Install dependencies:
+my-app/
+  src/Button.test.jsx
 
-npm install --save-dev jest babel-jest @babel/preset-env @babel/preset-react @testing-library/react @testing-library/jest-dom @testing-library/user-event identity-obj-proxy jest-environment-jsdom
+Then either:
 
-2. Create babel.config.cjs (if missing) in project root:
+1. Use "my-app" as your main project folder, OR
+2. Copy the contents inside "my-app" (such as src/) into your existing project root.
+
+The folder structure must match so that test file paths and imports work without modification.
+
+PREREQUISITES
+
+* Node.js installed
+* npm installed
+
+You can verify installation by running:
+node -v
+npm -v
+
+INSTALL DEPENDENCIES
+
+Run this command inside your project root:
+
+npm install --save-dev jest babel-jest @babel/preset-env @babel/preset-react @testing-library/react @testing-library/jest-dom @testing-library/user-event @testing-library/dom identity-obj-proxy jest-environment-jsdom
+
+CONFIG FILES TO ADD
+
+1. Create a file named: babel.config.cjs (in project root)
+   If it does not exist, create it with this content:
 
 module.exports = {
-  presets: ["@babel/preset-env", "@babel/preset-react"],
+  presets: [
+    ["@babel/preset-env", { targets: { node: "current" } }],
+    ["@babel/preset-react", { runtime: "automatic" }]
+  ],
 };
 
-3. Create jest.config.cjs (if missing) in project root:
+2. Create a file named: jest.config.cjs (in project root)
+   If it does not exist, create it with this content:
 
 module.exports = {
   testEnvironment: "jsdom",
+
+  transform: {
+    "^.+\\\\.(js|jsx|ts|tsx)$": "babel-jest"
+  },
 
   testPathIgnorePatterns: [
     "/node_modules/",
     "/dist/",
     "/build/",
-    "vite.config",
-    "babel.config",
-    "jest.config",
-    "eslint.config"
+    "/config/"
   ],
 
-  transform: {
-    "^.+\\.[jt]sx?$": "babel-jest"
-  },
-
   moduleNameMapper: {
-    "\\.(css|less|scss)$": "identity-obj-proxy"
+    "\\.(css|less|sass|scss)$": "identity-obj-proxy",
+    "\\.(svg|png|jpg|jpeg|gif|webp|avif)$": "<rootDir>/src/__mocks__/fileMock.js",
+    "^/vite.svg$": "<rootDir>/src/__mocks__/fileMock.js"
   },
 
-  moduleFileExtensions: ["js", "jsx", "ts", "tsx", "json"]
+  moduleFileExtensions: ["js", "jsx", "ts", "tsx"],
+
+  setupFilesAfterEnv: ["<rootDir>/src/setupTests.js"]
 };
 
-4. Ensure package.json contains:
+3. Create asset mock file (required for Vite static files)
+
+Create folder: src/__mocks__/
+Inside it, create file: fileMock.js
+
+Content:
+
+module.exports = "test-file-stub";
+
+4. Create Jest setup file
+
+Create file: src/setupTests.js
+
+Content:
+
+import "@testing-library/jest-dom";
+
+PACKAGE.JSON
+
+Ensure your package.json contains:
 
 "scripts": {
   "test": "jest"
 }
 
-5. Run tests:
+If a test script already exists, replace it with the one above.
+
+RUN TESTS
+
+To run all tests:
 
 npm test
 
+To run a specific test file:
+
+npm test -- src/App.test.jsx
+
 NOTES
-- jest-environment-jsdom is required for DOM testing.
-- babel-jest enables JSX & modern JS transformation.
-- CSS imports are mocked for Jest.
-- The setup does not modify project structure.
+
+* jest-environment-jsdom is required for DOM testing.
+* babel-jest enables JSX and modern JavaScript/TypeScript transformation. TypeScript is supported via Babel (no ts-jest required).
+* CSS imports are mocked using identity-obj-proxy.
+* Vite: Static files (SVG, images, avif) and paths like /vite.svg are mocked for compatibility with Vite config and asset handling. Use the provided moduleNameMapper and fileMock.js.
+* Create React App (CRA): CRA may already include Jest and React Testing Library. If "npm test" already runs Jest, you may only need to add or adjust jest.config.cjs and setupFilesAfterEnv if your tests require it.
+* Next.js: Generated tests treat Next.js components as standard React components. Client components and .tsx files are supported; the same Jest + Babel setup runs without Next-specific test runners.
+* The setup does not modify your project structure.
+* After completing these steps, generated test files should run without further configuration.
+
+ADVANCED TESTS
+If your generated tests include any of the following, this same setup supports them. Do not simplify or remove them:
+* Mocked modules (jest.mock) — supported.
+* Async tests (async/await, waitFor) — supported.
+* Hooks and context usage — supported; mock only what would break in jsdom.
+* API mocking (fetch, MSW, or jest.mock for API modules) — supported.
 --------------------------------
 `;
 
