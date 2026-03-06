@@ -29,7 +29,7 @@ This document describes what each part of the application does.
 |------|--------|
 | **Source kind** | `sourceKind`: `"github"` \| `"local"` \| `null`. Local: `localFileContents` from `parseUploadedFiles` (lib/localProject). |
 | **Repo state (GitHub)** | `repoUrl`, `scanning`, `scanStep` (0–2), `scanError`, `repo` (owner/repo/branch), `tree`, `list` (flat component list). |
-| **Upload (local)** | `handleUpload` / `handleDrop`: `parseUploadedFiles` sets `tree`, `list`, `localFileContents`; `uploadError` if no components. |
+| **Upload (local)** | `handleUpload` / `handleDrop`: `parseUploadedFiles` sets `tree`, `list`, `localFileContents`; `uploadError` if no components. File contents live only in `localFileContents` (in-memory); nothing is stored on the server. |
 | **Multi-select state** | `selectedPaths` (array of paths), `generatedTests` (record path → test string), `generatingAll`, `downloadZipFeedback`. `togglePathSelection(path)` and `isPathSelected(path)` manage checkbox selection. |
 | **Scan form** | URL input and “Scan repository” button. On submit, `handleScan` POSTs to `/api/repo/scan` with `{ url }`, then sets `repo`, `tree`, `list` or `scanError`; also clears `selectedPaths`, `generatedTests`, etc. |
 | **Scan steps** | When `scanning` is true, a card shows “Validating URL…”, “Fetching repository…”, “Scanning for components…” with ✓ / ⋯ / ○. |
@@ -136,7 +136,9 @@ This document describes what each part of the application does.
 
 **Role:** Parses uploaded files (folder or multiple files) into a tree, flat component list, and path → content map. Used when the user uploads a local project instead of scanning GitHub.
 
-**What it does:** `parseUploadedFiles(files, onProgress?)` reads `File[]` (e.g. from an input with `webkitdirectory` or multi-file). Uses `isComponentFile(path)` from `lib/github` to filter; builds `tree` via `buildTreeFromFlatList`, `list` (flat `ComponentItem[]`), and `fileContents: Record<string, string>` by reading each file with `file.text()`. Optionally reports progress via `onProgress(loaded, total)`.
+**What it does:** `parseUploadedFiles(files, onProgress?)` reads `File[]` (e.g. from an input with `webkitdirectory` or multi-file). Each file’s path comes from `file.webkitRelativePath` (folder structure preserved). Uses `isComponentFile(path)` from `lib/github` to filter; builds `tree` via `buildTreeFromFlatList`, `list` (flat `ComponentItem[]`), and `fileContents: Record<string, string>` by reading each file with `file.text()` in the browser. Optionally reports progress via `onProgress(loaded, total)`.
+
+**Where content is stored:** File contents are **not** sent to the server at upload time. They are kept only in **browser memory**: the page stores the returned `fileContents` in React state as `localFileContents`. The server receives file content only when the user triggers **Generate tests** or **Download Tests (ZIP)** (sent in the request body; not persisted on the server).
 
 **When it runs:** Called from `app/page.tsx` in `handleUpload` when the user selects or drops a folder.
 
@@ -303,8 +305,8 @@ The theme is switched by changing `data-theme` on `<html>`. All themed UI uses t
 7. **Page** shows Copy, Download (single file), **Download Tests (ZIP)**, Regenerate. **Download Tests (ZIP)** sends **POST /api/export-tests** with `{ files, inputMode, rootFolderName? }`. **Export route** builds steps.txt by calling `buildStepsPrompt` and `generateTestsWithFallback(..., { mode: "steps" })` (or uses fallback steps), then streams a ZIP containing `steps.txt` + all test files; user downloads `generated-tests.zip`.
 
 **Local flow:**
-1. User drags/drops a folder or selects a folder; **page** calls `parseUploadedFiles` from **lib/localProject** and sets `tree`, `list`, `localFileContents`, `sourceKind: "local"`.
-2. Same selection, generate, and download steps as above; file content comes from `localFileContents`; export sends `inputMode: "local"` and derives `rootFolderName` from the first path segment.
+1. User drags/drops a folder or selects a folder (input uses `webkitdirectory`); **page** calls `parseUploadedFiles` from **lib/localProject**, which reads each file with `file.text()` in the browser and returns `tree`, `list`, `fileContents`. Page sets `tree`, `list`, `localFileContents` (in-memory only), `sourceKind: "local"`. No content is stored on the server at upload time.
+2. Same selection, generate, and download steps as above; file content is read from `localFileContents`; export sends `inputMode: "local"` and derives `rootFolderName` from the first path segment.
 
 Theme and snow are independent: layout script and **ThemeProvider** set `data-theme`; **ThemeToggle** (in **SnowAndControls**) updates theme and persistence; **SnowAndControls** toggles the snow overlay.
 

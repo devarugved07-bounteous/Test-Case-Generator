@@ -13,18 +13,18 @@ FILE PLACEMENT:
 - Never guess filename
 `;
 
-const HEADER_COMMENT_RULE = `
-HEADER COMMENT (REQUIRED):
+// const HEADER_COMMENT_RULE = `
+// HEADER COMMENT (REQUIRED):
 
-/**
- * Test: <ComponentOrFunctionName>
- * Path: <relative/path/to/TestFile.test.tsx>
- * Run: npm test -- <relative/path/to/TestFile.test.tsx>
- */
+// /**
+//  * Test: <ComponentOrFunctionName>
+//  * Path: <relative/path/to/TestFile.test.tsx>
+//  * Run: npm test -- <relative/path/to/TestFile.test.tsx>
+//  */
 
-- Use npm test (NEVER npx jest).
-- No explanations.
-`;
+// - Use npm test (NEVER npx jest).
+// - No explanations.
+// `;
 
 const STACK_AND_IMPORTS = `
 STACK & IMPORTS:
@@ -137,7 +137,6 @@ IMPORTS:
 - @testing-library/user-event (REQUIRED when interactions exist; use userEvent.setup())
 
 ${FILE_PLACEMENT_RULES}
-${HEADER_COMMENT_RULE}
 ${STACK_AND_IMPORTS}
 ${SIMPLE_MOCKING}
 ${TEST_FOCUS}
@@ -162,7 +161,6 @@ IMPORTS:
 - @testing-library/user-event (use setup())
 
 ${FILE_PLACEMENT_RULES}
-${HEADER_COMMENT_RULE}
 ${STACK_AND_IMPORTS}
 ${SIMPLE_MOCKING}
 ${TEST_FOCUS}
@@ -181,7 +179,6 @@ export const REQUIREMENT_PROMPT = `You are an expert in JavaScript/TypeScript an
 
 Write implementation + beginner-friendly tests.
 
-${HEADER_COMMENT_RULE}
 ${STACK_AND_IMPORTS}
 ${USER_EVENT_AND_ASYNC_RULES}
 ${TEXT_MATCHING_STABILITY}

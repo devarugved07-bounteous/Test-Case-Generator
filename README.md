@@ -113,7 +113,7 @@ lib/
 2. Wait for the scan (validating URL, fetching repo, scanning for components).
 
 **Local flow**
-1. **Drag & drop** a folder onto the upload area or **click to browse** and select a folder (Chrome/Edge support folder selection). The app reads `.js`, `.jsx`, `.ts`, `.tsx` and skips `node_modules`, build, and test files.
+1. **Drag & drop** a folder onto the upload area or **click to browse** and select a folder (Chrome/Edge support folder selection via the directory picker). The app reads `.js`, `.jsx`, `.ts`, `.tsx` and skips `node_modules`, build, and test files. **Uploaded file contents are kept only in your browser’s memory** (React state); nothing is stored on the server or disk. Refreshing or leaving the page clears them.
 
 **Common**
 3. Use the **search box** to filter by name or path; click a component in the list or tree to select it. Use checkboxes to select multiple; **Select All Components** to select everything.
@@ -123,3 +123,11 @@ lib/
 7. Use the **theme toggle** (top-right) for dark/light mode; **Let it snow** for the snowfall overlay.
 
 For detailed component and API documentation, see **[COMPONENTS.md](./COMPONENTS.md)**.
+
+## Local upload: where content lives
+
+When you upload a **local folder** (drag & drop or folder picker):
+
+- **Folder structure** — Preserved using the browser’s `webkitRelativePath` (e.g. `my-app/src/components/Button.tsx`) and shown as a tree in the UI.
+- **File contents** — Read in the browser with the File API (`file.text()`) and stored in **in-memory React state** (`localFileContents`: path → string). No copy is written to the server’s filesystem or any database.
+- **When the server sees content** — Only when you click **Generate tests** or **Download Tests (ZIP)**; the app sends the relevant content in the request body. It is not persisted on the server after the request.
