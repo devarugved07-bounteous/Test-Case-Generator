@@ -8,6 +8,10 @@ export type ProviderName = "brain" | "claude" | "gemini";
 export type GenerateOptions = {
   /** When "component", use component test prompt and treat input as code. When "steps", input is the full steps prompt; return raw response as steps.txt content. */
   mode?: "component" | "steps";
+  /** Brain API: continue this conversation (avoid resending system prompt). Omit or null to start a new conversation. */
+  conversationId?: string | null;
+  /** 1-based index of this component in the current conversation (for logging). */
+  componentIndexInConversation?: number;
 };
 
 export type GenerateSuccess = {
@@ -20,6 +24,8 @@ export type GenerateSuccess = {
   implementation?: string;
   /** Whether input was treated as code (vs plain requirement) */
   isCode: boolean;
+  /** Brain API: conversation ID from response; send on next request to continue the same conversation. */
+  conversationId?: string;
 };
 
 export type GenerateFailure = {

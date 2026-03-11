@@ -183,6 +183,8 @@ export type ExportTestsBody = {
   inputMode?: ZipInputMode;
   /** Root folder in ZIP: GitHub = repo name, Local = uploaded folder name. Derived from first path when local and omitted. */
   rootFolderName?: string;
+  /** Brain: use this conversation so steps.txt is generated in the same thread as component tests. */
+  conversationId?: string | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -236,11 +238,20 @@ export async function POST(request: NextRequest) {
 
     const relativeTestPaths = entries.map((e) => getRelativeTestPath(e.path, rootFolder));
     const stepsPrompt = buildStepsPrompt(relativeTestPaths, rootFolder);
+    const conversationId =
+      typeof body.conversationId === "string" && body.conversationId.trim()
+        ? body.conversationId.trim()
+        : undefined;
     let stepsContent = FALLBACK_STEPS_TXT;
+    let stepsConversationId: string | undefined;
     try {
-      const stepsResult = await generateTestsWithFallback(stepsPrompt, { mode: "steps" });
+      const stepsResult = await generateTestsWithFallback(stepsPrompt, {
+        mode: "steps",
+        conversationId: conversationId ?? undefined,
+      });
       if (stepsResult.success && stepsResult.tests?.trim()) {
         stepsContent = stepsResult.tests.trim();
+        stepsConversationId = stepsResult.conversationId;
         console.log("[export-tests] Using LLM-generated steps.txt");
       } else {
         console.log("[export-tests] Using fallback steps.txt (generation failed or empty)");
@@ -273,12 +284,17 @@ export async function POST(request: NextRequest) {
 
     const webStream = Readable.toWeb(passThrough) as ReadableStream;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${FILENAME}"`,
+    };
+    if (stepsConversationId) {
+      headers["X-Conversation-Id"] = stepsConversationId;
+    }
+
     return new Response(webStream, {
       status: 200,
-      headers: {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${FILENAME}"`,
-      },
+      headers,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

@@ -10,11 +10,14 @@ const STEP_INTERVAL_MS = 1500;
 
 type SourceKind = "github" | "local" | null;
 
+const MAX_COMPONENTS_PER_CONVERSATION = 10;
+
 type GenerateResult = {
   success: true;
   tests: string;
   implementation?: string;
   metadata?: { provider: string };
+  conversationId?: string;
 };
 
 function isReactFile(path: string): boolean {
@@ -52,6 +55,8 @@ export default function Home() {
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [downloadZipFeedback, setDownloadZipFeedback] = useState(false);
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [componentCountInConversation, setComponentCountInConversation] = useState(0);
   const FEEDBACK_RESET_MS = 2000;
 
   function togglePathSelection(path: string) {
@@ -139,6 +144,8 @@ export default function Home() {
     setDownloadFeedback(false);
     setGeneratedTests({});
     setExpandedFolders(new Set());
+    setConversationId(null);
+    setComponentCountInConversation(0);
   }
 
   async function handleScan(e: React.FormEvent) {
@@ -288,10 +295,16 @@ export default function Home() {
     }
     setGenerating(true);
     try {
+      const startNewConversation = componentCountInConversation >= MAX_COMPONENTS_PER_CONVERSATION;
       const res = await fetch("/api/generate-tests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: content, mode: "component" }),
+        body: JSON.stringify({
+          input: content,
+          mode: "component",
+          conversationId: startNewConversation ? null : conversationId,
+          componentIndexInConversation: startNewConversation ? 1 : componentCountInConversation + 1,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -302,6 +315,9 @@ export default function Home() {
       const testContent = result.tests ?? "";
       setTests(testContent);
       setProviderUsed(result.metadata?.provider ?? null);
+      if (result.conversationId) setConversationId(result.conversationId);
+      if (startNewConversation) setComponentCountInConversation(1);
+      else setComponentCountInConversation((c) => c + 1);
       if (testContent) {
         setGeneratedTests((prev) => ({ ...prev, [selectedPath]: testContent }));
       }
@@ -333,20 +349,34 @@ export default function Home() {
     const paths = [...selectedPaths];
     let lastTests: string | null = null;
     let lastPath: string | null = null;
+    let currentConversationId = conversationId;
+    let count = componentCountInConversation;
     try {
       for (const path of paths) {
         const content = await getContentForPath(path);
         if (!content?.trim()) continue;
+        const startNewConversation = count >= MAX_COMPONENTS_PER_CONVERSATION;
         const res = await fetch("/api/generate-tests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: content, mode: "component" }),
+          body: JSON.stringify({
+            input: content,
+            mode: "component",
+            conversationId: startNewConversation ? null : currentConversationId,
+            componentIndexInConversation: startNewConversation ? 1 : count + 1,
+          }),
         });
         const data = await res.json();
         if (res.ok && data.success && data.tests) {
           setGeneratedTests((prev) => ({ ...prev, [path]: data.tests }));
           lastTests = data.tests;
           lastPath = path;
+          if (data.conversationId) {
+            currentConversationId = data.conversationId;
+            setConversationId(data.conversationId);
+          }
+          count = startNewConversation ? 1 : count + 1;
+          setComponentCountInConversation(count);
         }
       }
       if (paths.length === 1 && lastPath && lastTests) {
@@ -364,18 +394,32 @@ export default function Home() {
     if (list.length === 0) return;
     setGenError(null);
     setGeneratingAll(true);
+    let currentConversationId = conversationId;
+    let count = componentCountInConversation;
     try {
       for (const item of list) {
         const content = await getContentForPath(item.path);
         if (!content?.trim()) continue;
+        const startNewConversation = count >= MAX_COMPONENTS_PER_CONVERSATION;
         const res = await fetch("/api/generate-tests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: content, mode: "component" }),
+          body: JSON.stringify({
+            input: content,
+            mode: "component",
+            conversationId: startNewConversation ? null : currentConversationId,
+            componentIndexInConversation: startNewConversation ? 1 : count + 1,
+          }),
         });
         const data = await res.json();
         if (res.ok && data.success && data.tests) {
           setGeneratedTests((prev) => ({ ...prev, [item.path]: data.tests }));
+          if (data.conversationId) {
+            currentConversationId = data.conversationId;
+            setConversationId(data.conversationId);
+          }
+          count = startNewConversation ? 1 : count + 1;
+          setComponentCountInConversation(count);
         }
       }
     } catch {
@@ -408,6 +452,7 @@ export default function Home() {
           files: entries.map(([path, tests]) => ({ path, tests })),
           inputMode,
           ...(rootFolderName && { rootFolderName }),
+          conversationId: conversationId ?? undefined,
         }),
       });
       if (!res.ok) {
@@ -416,6 +461,8 @@ export default function Home() {
         setGenError(msg);
         return;
       }
+      const nextConversationId = res.headers.get("X-Conversation-Id");
+      if (nextConversationId) setConversationId(nextConversationId);
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);

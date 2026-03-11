@@ -1,7 +1,10 @@
 import type { GenerateOptions, GenerateResult, ITestGeneratorProvider } from "../types";
-import { buildPrompt } from "../prompts";
+import { buildPrompt, buildPromptParts, CONTINUATION_INSTRUCTION } from "../prompts";
 import { normalizeOutput } from "../normalize";
 import { isCode } from "@/lib/isCode";
+
+/** Max component generations per conversation before starting a new one (used by client). */
+export const MAX_COMPONENTS_PER_CONVERSATION = 10;
 
 const BASE_URL =
   process.env.BRAIN_API_BASE_URL ||
@@ -12,7 +15,7 @@ const MODEL =
   "claude-sonnet-4-20250514";
 
 const MAX_TOKENS = Number(process.env.BRAIN_MAX_TOKENS) || 4096;
-const TIMEOUT = Number(process.env.BRAIN_TIMEOUT_MS) || 120000; // 90s to avoid aborting before gateway timeout
+const TIMEOUT = Number(process.env.BRAIN_TIMEOUT_MS) || 120000; // 120s to avoid aborting before gateway timeout
 
 export const BRAIN_ERROR_CODES = {
   AUTH: "brain_auth",
@@ -113,18 +116,76 @@ export function createBrainProvider(apiKey: string): ITestGeneratorProvider {
     async generateTests(input: string, opts?: GenerateOptions): Promise<GenerateResult> {
       const isSteps = opts?.mode === "steps";
       const isCodeInput = !isSteps && (isCode(input) || opts?.mode === "component");
-      const { prompt, isCode: isCodeFlag, kind } = buildPrompt(
-        input,
-        isCodeInput,
-        opts?.mode
-      );
+      const conversationId = opts?.conversationId ?? undefined;
+      const continuing = Boolean(conversationId?.trim());
+      const componentIndex = opts?.componentIndexInConversation;
 
-      const body = {
+      if (opts?.mode === "component" || isCodeInput) {
+        const n = typeof componentIndex === "number" && componentIndex >= 1 ? componentIndex : "?";
+        if (continuing) {
+          console.log(
+            `[Brain] Component ${n} in this conversation — system prompt not sent (reusing conversation)`
+          );
+        } else {
+          console.log(
+            `[Brain] Component ${n} in this conversation — system prompt sent (new conversation; next system prompt after 10 more components)`
+          );
+        }
+      } else if (opts?.mode === "steps") {
+        console.log(
+          "[Brain] Steps.txt request —",
+          continuing ? "same conversation (no system prompt)" : "system prompt sent"
+        );
+      }
+
+      let messages: Array<{ role: "system" | "user"; content: string }>;
+      let isCodeFlag: boolean;
+      let kind: "code" | "component" | "requirement" | "steps";
+
+      if (continuing) {
+        const parts = buildPromptParts(input, isCodeInput, opts?.mode);
+        isCodeFlag = parts.isCode;
+        kind = parts.kind;
+        const userContent =
+          parts.kind === "component" || parts.kind === "code"
+            ? CONTINUATION_INSTRUCTION + parts.userPrompt
+            : parts.userPrompt;
+        messages = [{ role: "user", content: userContent }];
+        console.log("[Brain] --- Input sent to LLM (user only, no system prompt) ---");
+        console.log(userContent);
+        console.log("[Brain] --- End of input ---");
+      } else {
+        const { prompt, isCode: isCodeF, kind: k } = buildPrompt(input, isCodeInput, opts?.mode);
+        isCodeFlag = isCodeF;
+        kind = k;
+        const parts = buildPromptParts(input, isCodeInput, opts?.mode);
+        if (parts.systemPrompt) {
+          // Single user message so the full prompt is visible in the Brain chat UI (system role is often hidden)
+          const firstUserContent = `${parts.systemPrompt}\n\n---\n\n${parts.userPrompt}`;
+          messages = [{ role: "user", content: firstUserContent }];
+          console.log("[Brain] --- Input sent to LLM (with system prompt) ---");
+          console.log("[Brain] System prompt:");
+          console.log(parts.systemPrompt);
+          console.log("[Brain] User message:");
+          console.log(parts.userPrompt);
+          console.log("[Brain] --- End of input ---");
+        } else {
+          messages = [{ role: "user", content: parts.userPrompt }];
+          console.log("[Brain] --- Input sent to LLM (user only) ---");
+          console.log(parts.userPrompt);
+          console.log("[Brain] --- End of input ---");
+        }
+      }
+
+      const body: Record<string, unknown> = {
         model: MODEL,
         max_tokens: MAX_TOKENS,
         temperature: 0.2,
-        messages: [{ role: "user", content: prompt }],
+        messages,
       };
+      if (continuing) {
+        body.conversation_id = conversationId;
+      }
 
       try {
         let { res, text } = await fetchWithTimeout(body);
@@ -148,6 +209,23 @@ export function createBrainProvider(apiKey: string): ITestGeneratorProvider {
 
         const data = JSON.parse(text);
         const rawText = extractText(data);
+        const responseConversationId =
+          typeof data.conversation_id === "string" ? data.conversation_id : undefined;
+
+        const usage = data?.usage;
+        if (usage && typeof usage === "object") {
+          const promptTokens = usage.prompt_tokens ?? usage.input_tokens;
+          const completionTokens = usage.completion_tokens ?? usage.output_tokens;
+          const total = usage.total_tokens ?? (Number(promptTokens) + Number(completionTokens));
+          console.log(
+            "[Brain] tokens — input:",
+            promptTokens ?? "—",
+            "output:",
+            completionTokens ?? "—",
+            "total:",
+            total ?? "—"
+          );
+        }
 
         if (!rawText.trim()) {
           return {
@@ -167,6 +245,7 @@ export function createBrainProvider(apiKey: string): ITestGeneratorProvider {
           tests,
           implementation,
           isCode: isCodeFlag,
+          ...(responseConversationId && { conversationId: responseConversationId }),
         };
       } catch (err: any) {
         return {

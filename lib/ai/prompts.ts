@@ -232,6 +232,50 @@ export type BuildPromptResult = {
   kind: PromptKind;
 };
 
+/** Reminder for continuation turns (no system prompt resend): output only test code. */
+export const CONTINUATION_INSTRUCTION =
+  "Generate Jest + React Testing Library tests for this component. Return ONLY the test file code — no markdown, no descriptions, no explanations based on previous prompts\n\n";
+
+/** Split for Brain conversation: system (sent once) + user (sent each turn). When continuing a conversation, send only userPrompt with conversation_id. */
+export type BuildPromptPartsResult = {
+  systemPrompt: string | undefined;
+  userPrompt: string;
+  isCode: boolean;
+  kind: PromptKind;
+};
+
+export function buildPromptParts(
+  input: string,
+  isCodeInput: boolean,
+  mode?: "component" | "steps"
+): BuildPromptPartsResult {
+  if (mode === "steps") {
+    return { systemPrompt: undefined, userPrompt: input, isCode: false, kind: "steps" };
+  }
+  if (mode === "component") {
+    return {
+      systemPrompt: COMPONENT_TEST_PROMPT,
+      userPrompt: `Component source:\n\n${input}`,
+      isCode: true,
+      kind: "component",
+    };
+  }
+  if (isCodeInput) {
+    return {
+      systemPrompt: CODE_PROMPT,
+      userPrompt: `Generate Jest tests for this code:\n\n${input}`,
+      isCode: true,
+      kind: "code",
+    };
+  }
+  return {
+    systemPrompt: REQUIREMENT_PROMPT,
+    userPrompt: `Requirement:\n\n${input}`,
+    isCode: false,
+    kind: "requirement",
+  };
+}
+
 export function buildStepsPrompt(
   testPaths: string[],
   rootFolder: string

@@ -6,6 +6,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const userInput = typeof body.input === "string" ? body.input.trim() : "";
     const mode = body.mode === "component" ? "component" : undefined;
+    const conversationId =
+      body.conversationId !== undefined && body.conversationId !== null
+        ? (typeof body.conversationId === "string" ? body.conversationId.trim() : null)
+        : undefined;
+    const componentIndexInConversation =
+      typeof body.componentIndexInConversation === "number" && body.componentIndexInConversation >= 1
+        ? body.componentIndexInConversation
+        : undefined;
 
     if (!userInput) {
       return NextResponse.json(
@@ -14,7 +22,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await generateTestsWithFallback(userInput, { mode });
+    const result = await generateTestsWithFallback(userInput, {
+      mode,
+      conversationId: conversationId ?? undefined,
+      componentIndexInConversation,
+    });
 
     if (!result.success) {
       const status =
@@ -36,6 +48,7 @@ export async function POST(request: NextRequest) {
       tests: result.tests,
       implementation: result.implementation ?? undefined,
       metadata: { provider: result.metadata.provider },
+      ...(result.conversationId && { conversationId: result.conversationId }),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
